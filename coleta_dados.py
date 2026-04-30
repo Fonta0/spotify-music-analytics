@@ -30,35 +30,38 @@ tracks_lista = []
 
 for artista in artistas:
     print(f"Coletando dados de: {artista}")
-
-    # Busca tracks do artista
-    resultado = sp.search(q=f"artist:{artista}", type="track", limit=10, market="BR")
-    items = resultado["tracks"]["items"]
-
-    if not items:
-        print(f"Nenhuma track encontrada para: {artista}")
-        continue
-
-    for track in items:
-        # Pega info do artista principal da track
-        artist_info = track["artists"][0]
-
-        tracks_lista.append({
-            "artista_buscado": artista,
-            "artista_track": artist_info["name"],
-            "musica": track["name"],
-            "album": track["album"]["name"],
-            "data_lancamento": track["album"]["release_date"],
-            "duracao_ms": track["duration_ms"],
-            "popularidade_musica": track.get("popularity", 0),
-            "explicit": track["explicit"]
-        })
+    
+    # Faz 3 buscas com offset pra pegar mais músicas
+    for offset in [0, 10]:
+        resultado = sp.search(q=f"artist:{artista}", type="track", limit=10, offset=offset, market="BR")
+        items = resultado["tracks"]["items"]
+        
+        for track in items:
+            track_artist = track["artists"][0]["name"]
+            if track_artist.lower() != artista.lower():
+                continue
+            
+            tracks_lista.append({
+                "artista_buscado": artista,
+                "artista_track": track_artist,
+                "musica": track["name"],
+                "album": track["album"]["name"],
+                "data_lancamento": track["album"]["release_date"],
+                "duracao_ms": track["duration_ms"],
+                "popularidade_musica": track.get("popularity", 0),
+                "explicit": track["explicit"]
+            })
 
 df = pd.DataFrame(tracks_lista)
+df = df.drop_duplicates(subset=["musica", "artista_buscado"])
 df["duracao_min"] = (df["duracao_ms"] / 60000).round(2)
+df["data_lancamento"] = pd.to_datetime(df["data_lancamento"], errors="coerce")
+df["ano_lancamento"] = df["data_lancamento"].dt.year
+df["explicit"] = df["explicit"].map({True: "Sim", False: "Não"})
 
 os.makedirs("data", exist_ok=True)
-df.to_csv("data/tracks.csv", index=False, encoding="utf-8-sig")
+df.to_csv("data/gospel_analytics.csv", index=False, encoding="utf-8-sig")
 
-print(f"\nColeta concluída! {len(df)} músicas salvas em data/tracks.csv")
-print(df.head())
+
+print(f"\nColeta concluída! {len(df)} músicas salvas em data/tracks_limpo.csv")
+print(df.groupby("artista_buscado").agg(total=("musica","count"), anos=("ano_lancamento","nunique")).sort_values("total", ascending=False))
